@@ -1,36 +1,7 @@
-# socrata
+# socrata-clj-dump
 
-FIXME: description
+WIP socrata downloader using clojure.
 
-## Installation
+Currently only works in a REPL. 
 
-Download from http://example.com/FIXME.
-
-## Usage
-
-FIXME: explanation
-
-    $ java -jar socrata-0.1.0-standalone.jar [args]
-
-## Options
-
-FIXME: listing of options this app accepts.
-
-## Examples
-
-...
-
-### Bugs
-
-...
-
-### Any Other Sections
-### That You Think
-### Might be Useful
-
-## License
-
-Copyright © 2017 FIXME
-
-Distributed under the Eclipse Public License either version 1.0 or (at
-your option) any later version.
+Needs better error checking, but it so far works pretty well.
