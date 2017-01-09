@@ -21,41 +21,23 @@
 (def datasets (:dataset (download-json dataset-url)))
 (def views (map :view (:results (download-json views-url))))
 
+(defn dataset-links
+  [dataset]
+  (map :downloadURL (:distribution dataset)))
+
+(defn dataset-id
+  [dataset]
+  (last (str/split (:identifier dataset) #"/")))
+
 (defn view-metadata 
   [view-id]
   (first (filter #(= (:id %) view-id) views)))
 
-(defn request-dataset
-  [url redirect?]
-  (client/get 
-    url {:insecure? true 
-         :follow-redirects redirect?
-         :as :stream
-         :async? true
-         :throw-exceptions false}))
-
-(defn fetch-dataset [url]
-  ;socrata 400s with a HEAD request. Workaround using redirects.
-  (let [redir-location 
-          (:Location (:headers (fetch-dataset url false)))]
-    (if (nil? redir-location)
-      (request-dataset url true)
-      (request-dataset redir-location true))))
-
-(defn prepare-dir 
-  [view-id]
-  (let [dir (format "%s/%s" data-dir view-id)
-        metafile (format "%s/view.json" dir) 
-        metadata (view-metadata view-id)]
-    (fs/mkdir dir)
-    (spit metafile metadata)))
-
 (defn query-hashmap 
-  ([] nil) ;nil if no args. Fix this.
-  ([query-str] 
+  [query-str] 
   (apply conj 
          (apply (fn [k v] (hash-map (keyword k) v))
-                (str/split query-str #"=")))))
+                (str/split query-str #"[&=;]"))))
 
 (defn response-filename
   [response]
@@ -65,38 +47,56 @@
     (if (contains? query-map :filename)
         (:filename query-map)
         (last (str/split (:uri parsed-url) #"/")))))
-  
+
+(defn prepare-dir 
+  [view-id]
+  (let [dir (format "%s/%s" data-dir view-id)]
+       (if (not (fs/exists? dir))
+           (let [metafile (format "%s/view.json" dir) 
+                 metadata (view-metadata view-id)]
+                (fs/mkdir dir)
+                (spit metafile metadata)))))
+
 (defn save-dataset
-  [http-response view-id]
+  [view-id http-response]
+  (prepare-dir view-id)
   (let [filename (response-filename (dissoc http-response :body))
         filepath (format "%s/%s/%s" data-dir view-id filename)]
+        (println (format "Saving to %s " filepath))
         (with-open [w (io/output-stream filepath)]
                    (.write w (:body http-response)))))
-  
-(defn dataset-links
-  [dataset]
-  (map :downloadURL (:distribution dataset)))
+ 
+(defn request-dataset
+  [url redirect?]
+  (if redirect? 
+      (println (format "Downloading %s" url)))
+  (client/get 
+    url {:insecure? true 
+         :follow-redirects redirect?
+         :as :byte-array
+         :async? true
+         :throw-exceptions false}))
 
-(defn dataset-id
-  [dataset]
-  (last (str/split (:identifier dataset) #"/")))
-
-(defn download-dataset
+(defn fetch-dataset [view-id url]
+  ;socrata 400s with a HEAD request. Workaround using redirects.
+  (let [redir-location 
+            (->> (request-dataset url false) :headers :Location)
+        response 
+            (if (nil? redir-location)
+                (request-dataset url true)
+                (request-dataset redir-location true))]
+        (save-dataset view-id response)))
+        
+(defn fetch-full-dataset
   [dataset] 
   (let [links (dataset-links dataset)
         view-id (dataset-id dataset)]
-    (prepare-dir view-id)
-    (->> (map grab-dataset links)
-         (map #(save-dataset % view-id))
+    (println (format "\nGetting %s" view-id))
+    (->> (map #(fetch-dataset view-id %) links)
          (doall))))
 
-;(def cli-options 
-;  [["-s" "--source SOURCE" "URL of socrata portal"
-;    :default "https://data.cityofchicago.org"]
-;   ["-d" "--savedir SAVEDIR" "Path to save data."
-;    :default "/opt/data/socrata/"]
-;   ["-l" "--list-datasets"]
-;    ["-h" "--help"]])
+(defn download-socrata []
+  (doall (map fetch-full-dataset datasets)))
 
 (defn -main
   [& args])
